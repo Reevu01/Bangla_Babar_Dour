@@ -1,0 +1,300 @@
+    :root {
+      --cinematic-ratio: calc(932 / 430);
+    }
+
+    /* ===== GLOBAL STYLES ===== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a2e14;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+    }
+
+    #game-wrapper {
+      position: relative;
+      width: min(100vw, calc(100vh * var(--cinematic-ratio)));
+      height: min(100vh, calc(100vw / var(--cinematic-ratio)));
+      aspect-ratio: var(--cinematic-ratio);
+      overflow: hidden;
+      border-radius: 0;
+      box-shadow: none;
+      touch-action: none;
+    }
+
+    @media (pointer: fine) {
+      #game-wrapper {
+        width: min(96vw, calc(92vh * var(--cinematic-ratio)));
+        height: min(92vh, calc(96vw / var(--cinematic-ratio)));
+        border-radius: 12px;
+        box-shadow: 0 0 40px rgba(0,0,0,0.6);
+      }
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #1a3a2a;
+    }
+
+    /* ===== SCREEN OVERLAYS ===== */
+    .screen-overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: rgba(10, 46, 20, 0.95);
+      z-index: 10;
+      transition: opacity 0.3s;
+    }
+
+    .hidden { display: none !important; }
+
+    #orientation-overlay {
+      z-index: 20;
+      text-align: center;
+      padding: 24px;
+      background: rgba(5, 20, 10, 0.94);
+    }
+
+    #orientation-overlay h3 {
+      color: #f0c040;
+      font-size: 26px;
+      margin-bottom: 10px;
+      letter-spacing: 1px;
+    }
+
+    #orientation-overlay p {
+      color: #d8f0dd;
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 320px;
+    }
+
+    /* ===== HOME SCREEN ===== */
+    #home-screen h1 {
+      font-size: 52px;
+      color: #f42a41;
+      text-transform: uppercase;
+      letter-spacing: 4px;
+      margin-bottom: 4px;
+      text-shadow: 0 0 20px rgba(244, 42, 65, 0.5);
+    }
+
+    #home-screen .title-bangla {
+      font-size: 22px;
+      color: #006a4e;
+      margin-bottom: 6px;
+      letter-spacing: 3px;
+    }
+
+    #home-screen .subtitle {
+      font-size: 14px;
+      color: #8fbc8f;
+      margin-bottom: 36px;
+      letter-spacing: 2px;
+    }
+
+    .btn {
+      padding: 14px 48px;
+      font-size: 18px;
+      font-weight: 700;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    }
+
+    .btn:active { transform: translateY(0); }
+
+    .btn-primary {
+      background: #f42a41;
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: #8fbc8f;
+      border: 2px solid #006a4e;
+      padding: 10px 32px;
+      font-size: 14px;
+    }
+
+    .btn-secondary:hover { color: #fff; border-color: #f42a41; }
+
+    .high-score-display {
+      margin-top: 24px;
+      color: #f0c040;
+      font-size: 16px;
+      letter-spacing: 1px;
+    }
+
+    .high-score-display span { font-weight: 700; font-size: 20px; }
+
+    .leaderboard-panel {
+      width: min(92%, 420px);
+      margin-top: 14px;
+      padding: 10px 12px;
+      border: 1px solid rgba(143,188,143,0.25);
+      border-radius: 8px;
+      background: rgba(8, 28, 14, 0.65);
+    }
+
+    .leaderboard-panel.compact {
+      width: min(88%, 340px);
+      margin-top: 10px;
+      margin-bottom: 8px;
+    }
+
+    .leaderboard-title {
+      color: #f0c040;
+      font-size: 13px;
+      letter-spacing: 1px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .leaderboard-name-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    #player-name-input {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #2a5a3a;
+      background: #0f2515;
+      color: #d8f0dd;
+      font-size: 13px;
+      outline: none;
+    }
+
+    #player-name-input:focus {
+      border-color: #f0c040;
+      box-shadow: 0 0 0 2px rgba(240,192,64,0.2);
+    }
+
+    .btn-small {
+      padding: 8px 10px;
+      font-size: 12px;
+      min-width: 88px;
+    }
+
+    .leaderboard-status {
+      color: #8fbc8f;
+      font-size: 11px;
+      min-height: 14px;
+      margin-bottom: 6px;
+    }
+
+    .leaderboard-list {
+      margin-left: 18px;
+      color: #e7f6ea;
+      font-size: 12px;
+      line-height: 1.5;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .leaderboard-list li {
+      margin-bottom: 1px;
+      letter-spacing: 0.2px;
+    }
+
+    .controls-hint {
+      margin-top: 30px;
+      color: #4a7a4a;
+      font-size: 12px;
+      text-align: center;
+      line-height: 1.8;
+    }
+
+    .controls-hint kbd {
+      background: #1a3a2a;
+      color: #8fbc8f;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      border: 1px solid #2a5a3a;
+    }
+
+    /* ===== GAME OVER SCREEN ===== */
+    #gameover-screen h2 {
+      font-size: 42px;
+      color: #f42a41;
+      margin-bottom: 16px;
+      text-shadow: 0 0 20px rgba(244, 42, 65, 0.5);
+    }
+
+    #gameover-screen .final-score {
+      font-size: 22px;
+      color: #eee;
+      margin-bottom: 6px;
+    }
+
+    #gameover-screen .final-score span {
+      color: #f0c040;
+      font-weight: 700;
+    }
+
+    #gameover-screen .btn-group {
+      display: flex;
+      gap: 16px;
+      margin-top: 28px;
+    }
+
+    /* ===== HUD (in-game score) ===== */
+    #hud {
+      position: absolute;
+      top: 12px; right: 16px;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      z-index: 5;
+      text-shadow: 1px 1px 4px rgba(0,0,0,0.5);
+      text-align: right;
+    }
+
+    #hud .hud-highscore {
+      font-size: 12px;
+      color: #f0c040;
+      margin-top: 2px;
+    }
+
+    /* Bangladesh flag decoration on home screen */
+    .flag-decoration {
+      width: 60px; height: 36px;
+      background: #006a4e;
+      border-radius: 3px;
+      position: relative;
+      margin-bottom: 16px;
+      border: 1px solid #004d38;
+    }
+    .flag-decoration::after {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      background: #f42a41;
+      border-radius: 50%;
+      top: 50%; left: 45%;
+      transform: translate(-50%, -50%);
+    }
