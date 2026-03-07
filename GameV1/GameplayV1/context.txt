@@ -1,0 +1,16 @@
+make it so the game can be played on the phone browser, tapping leads to jumping and double tapping leads to double jumping. It should be played in the landscape mode
+
+it is not responsive at all, it is all over the place. look at the image, the background is not alligned, the characters are so huge and obstacles so small and in general does not fit well
+
+instead of a tap on mobile make it a swipe
+
+make the characters and the object 5% lower on the screen for mobile mode
+
+I added some music and sound effects assets to the game directory, take a look at them- gameplay.mp3 (game music) plays during the actual gameplay duration, jump.mp3 (sound effect) plays when the character performs a jump action, obstacle_hit.mp3 (sound effect) plays when the character hits an obstacle, outro.mp3 (game music) plays when the gameover screen is showed. Implement this
+
+change name of the game on the home screen to "Bangla Babar Dour" in bangla
+
+Done. The home screen name is now updated to Bangla:
+
+বাংলা বাবার দৌড় in the main title
+বাংলা বাবার দৌড় in the Bangla subtitle line
