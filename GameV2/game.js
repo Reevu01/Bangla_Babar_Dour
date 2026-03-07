@@ -121,15 +121,46 @@
   const FLYING_LANE_COUNT = 5;
   const OBSTACLE_DENSITY_MULTIPLIER = 1.3;
   const MAX_OBSTACLE_FAMILY_STREAK = 3;
-  // Difficulty milestone cadence: 50=A (density), 100=B (speed), 150=A, 200=B...
-  const DIFFICULTY_PHASE_SCORE_STEP = 50;
-  const DENSITY_PRESSURE_PER_PHASE = 0.095;
-  const MAX_DENSITY_PRESSURE_PHASES = 7;
-  const SPEED_STEP_PER_PHASE = 0.26;
-  const SPEED_CATCHUP_RATE = 0.0022;
+  // Difficulty milestone cadence — smoother ramp with smaller, more frequent steps.
+  const DIFFICULTY_PHASE_SCORE_STEP = 40;
+  const DENSITY_PRESSURE_PER_PHASE = 0.075;
+  const MAX_DENSITY_PRESSURE_PHASES = 9;
+  const SPEED_STEP_PER_PHASE = 0.20;
+  const SPEED_CATCHUP_RATE = 0.003;
   const TARGET_FPS = 60;
   const FIXED_FRAME_MS = 1000 / TARGET_FPS;
   const MAX_DT_MULTIPLIER = 2.2;
+
+  // ===== POLISH SYSTEM CONSTANTS =====
+  // Jump buffering — forgiving input timing
+  const COYOTE_TIME_FRAMES = 5;
+  const JUMP_BUFFER_FRAMES = 6;
+  // Grace period — no obstacles at game start
+  const GRACE_PERIOD_FRAMES = 90;
+  // Minimum safety gap between different obstacle families
+  const MIN_FAMILY_SWITCH_GAP = 1.35;
+  // Squash/stretch on landing
+  const SQUASH_FRAMES = 6;
+  const SQUASH_SCALE_X = 1.2;
+  const SQUASH_SCALE_Y = 0.8;
+  // Near-miss detection threshold (px from hitbox edge)
+  const NEAR_MISS_THRESHOLD = 10;
+  const NEAR_MISS_DISPLAY_FRAMES = 40;
+  // Death animation frames before showing game over UI
+  const DEATH_ANIM_FRAMES = 36;
+  // Powerup system
+  const POWERUP_TYPES = [
+    { type: 'chai_shield', label: 'চায়ের ঢাল', color: '#f0c040', icon: '☕', duration: 180, minScore: 30, chance: 0.08, cooldown: 400 },
+    { type: 'score_multi', label: 'ডাবল পয়েন্ট', color: '#ffd700', icon: '⭐', duration: 300, minScore: 60, chance: 0.06, cooldown: 500 },
+    { type: 'slow_motion', label: 'ধীরে চল', color: '#66d9ef', icon: '⏳', duration: 240, minScore: 100, chance: 0.05, cooldown: 600 },
+  ];
+  const POWERUP_SIZE = 18;
+  const POWERUP_MIN_GAP = 400;
+  const POWERUP_BOB_SPEED = 0.06;
+  const POWERUP_BOB_AMP = 3;
+  // Milestone celebrations
+  const MILESTONE_SCORES = [50, 100, 200, 300, 500, 750, 1000];
+  const MILESTONE_LABELS = ['৫০ 🔥', '১০০ 💪', '২০০ 🚀', '৩০০ ⚡', '৫০০ 🌟', '৭৫০ 🏆', '১০০০ 👑'];
 
   // Leaderboard backend for GitHub Pages deployments.
   // Configure these values to enable cross-user global leaderboard.
@@ -258,7 +289,7 @@
   syncWorldScale();
 
   // ===== GAME STATE =====
-  let gameState = "home"; // 'home' | 'playing' | 'gameover'
+  let gameState = "home"; // 'home' | 'playing' | 'gameover' | 'paused'
   let score = 0;
   let highScore = loadHighScore();
   let playerName = loadPlayerName();
@@ -271,6 +302,38 @@
   let densityPressurePhases = 0;
   let speedPressurePhases = 0;
   let targetSpeed = CONFIG.baseSpeed;
+  let gracePeriodTimer = 0;
+  // Pause
+  let paused = false;
+  // Tutorial
+  let hasSeenTutorial = false;
+  try { hasSeenTutorial = localStorage.getItem('dhakaDashTutorialSeen') === '1'; } catch {}
+  let tutorialTimer = 0;
+  let tutorialActive = false;
+  // Near-miss
+  let nearMissTimer = 0;
+  let nearMissX = 0;
+  let nearMissY = 0;
+  let nearMissCount = 0;
+  // Squash/stretch
+  let squashTimer = 0;
+  // Death animation
+  let deathAnimTimer = 0;
+  let deathTumbleAngle = 0;
+  let deathVY = 0;
+  let isDeathAnimating = false;
+  // New high score tracking
+  let newHighScoreReached = false;
+  let newHighScoreBannerTimer = 0;
+  // Milestone celebration text
+  let milestoneText = '';
+  let milestoneTextTimer = 0;
+  let lastMilestoneIndex = -1;
+  // Active powerup
+  let activePowerup = null;
+  let activePowerupTimer = 0;
+  let powerupItems = [];
+  let lastPowerupSpawnX = -POWERUP_MIN_GAP;
 
   function leaderboardEnabled() {
     return Boolean(
@@ -893,17 +956,8 @@
   // ============================================================
   //  OBSTACLE GENERATION — Bangladesh street obstacles
   // ============================================================
-  const OBSTACLE_HEIGHT_MULTIPLIER_MOBILE = {
-    // Ground obstacles are +15% from previous pass.
-    // obstacle1 is now +20% from the current tuning.
-    obstacle1: [1.12, 1.48],
-    obstacle2: [0.94, 1.21],
-    obstacle3: [0.94, 1.21],
-    // Base flying band kept stable; global flying multiplier drives +60% size increase.
-    flyObstacle1: [0.72, 1.02],
-    flyObstacle2: [0.72, 1.02],
-  };
-  const OBSTACLE_HEIGHT_MULTIPLIER_DESKTOP = {
+  // Unified obstacle height multipliers (were previously duplicated for mobile/desktop)
+  const OBSTACLE_HEIGHT_MULTIPLIER = {
     obstacle1: [1.12, 1.48],
     obstacle2: [0.94, 1.21],
     obstacle3: [0.94, 1.21],
@@ -911,14 +965,8 @@
     flyObstacle2: [0.72, 1.02],
   };
   const OBSTACLE_MAX_WIDTH_RATIO = 0.2;
-  const OBSTACLE_MAX_WIDTH_RATIO_BY_TYPE_MOBILE = {
-    obstacle1: 0.2,
-    obstacle2: 0.26,
-    obstacle3: 0.2,
-    flyObstacle1: 0.18,
-    flyObstacle2: 0.18,
-  };
-  const OBSTACLE_MAX_WIDTH_RATIO_BY_TYPE_DESKTOP = {
+  // Unified width ratios (were previously duplicated for mobile/desktop)
+  const OBSTACLE_MAX_WIDTH_RATIO_BY_TYPE = {
     obstacle1: 0.2,
     obstacle2: 0.26,
     obstacle3: 0.2,
@@ -1073,12 +1121,8 @@
     // Use native sprite dimensions scaled to ~1/4 of gameplay window without distortion.
     const sprite = obstacleTypeToSprite[def.type];
     const isMobile = isMobileDevice();
-    const heightMultipliers = isMobile
-      ? OBSTACLE_HEIGHT_MULTIPLIER_MOBILE
-      : OBSTACLE_HEIGHT_MULTIPLIER_DESKTOP;
-    const widthRatioByType = isMobile
-      ? OBSTACLE_MAX_WIDTH_RATIO_BY_TYPE_MOBILE
-      : OBSTACLE_MAX_WIDTH_RATIO_BY_TYPE_DESKTOP;
+    const heightMultipliers = OBSTACLE_HEIGHT_MULTIPLIER;
+    const widthRatioByType = OBSTACLE_MAX_WIDTH_RATIO_BY_TYPE;
 
     const [hMinMul, hMaxMul] = heightMultipliers[def.type] || [0.9, 1.2];
     const randomHeightMul = hMinMul + Math.random() * (hMaxMul - hMinMul);
@@ -1269,6 +1313,12 @@
     ) {
       e.preventDefault();
     }
+    // Pause toggle
+    if ((e.code === 'Escape' || e.code === 'KeyP') && (gameState === 'playing' || gameState === 'paused')) {
+      e.preventDefault();
+      if (gameState === 'playing') pauseGame();
+      else resumeGame();
+    }
   });
 
   document.addEventListener("keyup", (e) => {
@@ -1421,6 +1471,38 @@
   document.addEventListener("pointerdown", unlockAudio, { passive: true });
   document.addEventListener("keydown", unlockAudio, { passive: true });
 
+  // ===== PAUSE SYSTEM =====
+  function pauseGame() {
+    if (gameState !== 'playing') return;
+    gameState = 'paused';
+    paused = true;
+    cancelAnimationFrame(animFrame);
+    const pauseScreen = document.getElementById('pause-screen');
+    if (pauseScreen) pauseScreen.classList.remove('hidden');
+  }
+
+  function resumeGame() {
+    if (gameState !== 'paused') return;
+    gameState = 'playing';
+    paused = false;
+    lastTimestamp = 0; // Prevent deltaTime spike
+    const pauseScreen = document.getElementById('pause-screen');
+    if (pauseScreen) pauseScreen.classList.add('hidden');
+    animFrame = requestAnimationFrame(gameLoop);
+  }
+
+  const btnPause = document.getElementById('btn-pause');
+  if (btnPause) {
+    btnPause.addEventListener('click', () => {
+      if (gameState === 'playing') pauseGame();
+    });
+  }
+  const btnResume = document.getElementById('btn-resume');
+  if (btnResume) {
+    btnResume.addEventListener('click', () => {
+      resumeGame();
+    });
+  }
   // ============================================================
   //  SCREEN TRANSITIONS
   // ============================================================
@@ -1477,6 +1559,7 @@
     speedPressurePhases = 0;
     obstacles = [];
     nextObstacleX = W + 150;
+    gracePeriodTimer = GRACE_PERIOD_FRAMES;
 
     // Reset game feel
     cameraShakeTimer = 0;
@@ -1485,6 +1568,22 @@
     wasJumping = false;
     dustParticles.length = 0;
     speedLines.length = 0;
+    squashTimer = 0;
+    nearMissTimer = 0;
+    nearMissCount = 0;
+    newHighScoreReached = false;
+    newHighScoreBannerTimer = 0;
+    milestoneText = '';
+    milestoneTextTimer = 0;
+    lastMilestoneIndex = -1;
+    isDeathAnimating = false;
+    deathAnimTimer = 0;
+
+    // Reset powerups
+    activePowerup = null;
+    activePowerupTimer = 0;
+    powerupItems = [];
+    lastPowerupSpawnX = -POWERUP_MIN_GAP;
 
     // Reset player
     player.y = CONFIG.groundY - CONFIG.playerHeight;
@@ -1497,6 +1596,8 @@
     player.jumpKeyWasDown = false;
     player.isDucking = false;
     player.legFrame = 0;
+    player.coyoteTimer = 0;
+    player.jumpBufferTimer = 0;
     queuedMobileJumps = 0;
     mobileDuckTimerFrames = 0;
     lastFlyingRequirement = "jump";
@@ -1514,11 +1615,25 @@
     groundOffset = 0;
     bgScrollX = 0;
 
+    // Tutorial for first-time players
+    if (!hasSeenTutorial) {
+      tutorialActive = true;
+      tutorialTimer = 180; // 3 seconds at 60fps
+      try { localStorage.setItem('dhakaDashTutorialSeen', '1'); } catch {}
+      hasSeenTutorial = true;
+    } else {
+      tutorialActive = false;
+      tutorialTimer = 0;
+    }
+
     // UI
     gameState = "playing";
+    paused = false;
     startGameplayMusic();
     showScreen(null);
     hud.classList.remove("hidden");
+    const pauseScreen = document.getElementById('pause-screen');
+    if (pauseScreen) pauseScreen.classList.add('hidden');
     updateHighScoreDisplays();
 
     cancelAnimationFrame(animFrame);
@@ -1533,38 +1648,51 @@
     cancelAnimationFrame(animFrame);
     playObstacleHitSfx();
 
-    // Screen shake effect
+    // Screen shake + death animation
     cameraShakeTimer = 12;
     cameraShakeIntensity = 4;
+    isDeathAnimating = true;
+    deathAnimTimer = DEATH_ANIM_FRAMES;
+    deathTumbleAngle = 0;
+    deathVY = CONFIG.jumpForce * 0.5;
 
-    // Brief delay for shake to play before showing game over UI
     const showGameOverUI = () => {
+      isDeathAnimating = false;
       startOutroMusic();
       const finalScore = Math.floor(score);
       if (finalScore > highScore) {
         saveHighScore(finalScore);
       }
       finalScoreEl.textContent = finalScore;
+      // Show near-miss count in game over
+      const nearMissEl = document.getElementById('gameover-nearmiss');
+      if (nearMissEl) nearMissEl.textContent = nearMissCount;
       updateHighScoreDisplays();
       showScreen(gameoverScreen);
       submitScoreToLeaderboard(finalScore);
     };
 
-    // Animate shake then show UI
-    let shakeFrames = 12;
-    const shakeLoop = () => {
-      if (shakeFrames > 0) {
-        shakeFrames--;
-        cameraShakeTimer = shakeFrames;
+    // Death tumble animation loop
+    const deathLoop = () => {
+      if (deathAnimTimer > 0) {
+        deathAnimTimer--;
+        cameraShakeTimer = Math.max(0, cameraShakeTimer - 1);
+        deathTumbleAngle += 0.15;
+        deathVY += CONFIG.gravity * 0.8;
+        player.y += deathVY;
+        if (player.y > CONFIG.groundY + 20) {
+          player.y = CONFIG.groundY + 20;
+        }
         draw();
-        requestAnimationFrame(shakeLoop);
+        requestAnimationFrame(deathLoop);
       } else {
         cameraShakeTimer = 0;
+        isDeathAnimating = false;
         draw();
         showGameOverUI();
       }
     };
-    requestAnimationFrame(shakeLoop);
+    requestAnimationFrame(deathLoop);
   }
 
   // ============================================================
@@ -1573,14 +1701,63 @@
   function update(stepMul) {
     frameCount += stepMul;
 
+    // --- Tutorial timer ---
+    if (tutorialActive) {
+      tutorialTimer = Math.max(0, tutorialTimer - stepMul);
+      if (tutorialTimer <= 0) tutorialActive = false;
+      // Any input dismisses tutorial early
+      const anyInput = !!(keys["Space"] || keys["ArrowUp"] || keys["ArrowDown"] || keys["ShiftLeft"] || keys["ShiftRight"] || queuedMobileJumps > 0 || mobileDuckTimerFrames > 0);
+      if (anyInput) { tutorialActive = false; tutorialTimer = 0; }
+    }
+
+    // --- Grace period (no obstacles at game start) ---
+    if (gracePeriodTimer > 0) {
+      gracePeriodTimer = Math.max(0, gracePeriodTimer - stepMul);
+    }
+
     // --- Camera shake decay ---
     if (cameraShakeTimer > 0)
       cameraShakeTimer = Math.max(0, cameraShakeTimer - stepMul);
 
+    // --- Squash timer decay ---
+    if (squashTimer > 0)
+      squashTimer = Math.max(0, squashTimer - stepMul);
+
+    // --- Active powerup timer ---
+    const effectiveSpeedMul = (activePowerup === 'slow_motion' && activePowerupTimer > 0) ? 0.6 : 1.0;
+    if (activePowerupTimer > 0) {
+      activePowerupTimer = Math.max(0, activePowerupTimer - stepMul);
+      if (activePowerupTimer <= 0) {
+        activePowerup = null;
+      }
+    }
+
     // --- Score & alternating difficulty phases ---
-    score += CONFIG.scoreRate * speed * stepMul;
+    const scoreMultiplier = (activePowerup === 'score_multi' && activePowerupTimer > 0) ? 2.0 : 1.0;
+    score += CONFIG.scoreRate * speed * stepMul * scoreMultiplier;
     const currentScore = Math.floor(score);
     hudScore.textContent = currentScore;
+
+    // --- New high score detection ---
+    if (!newHighScoreReached && currentScore > highScore && highScore > 0) {
+      newHighScoreReached = true;
+      newHighScoreBannerTimer = 90; // 1.5 seconds
+    }
+    if (newHighScoreBannerTimer > 0) {
+      newHighScoreBannerTimer = Math.max(0, newHighScoreBannerTimer - stepMul);
+    }
+
+    // --- Milestone celebration ---
+    for (let mi = 0; mi < MILESTONE_SCORES.length; mi++) {
+      if (currentScore >= MILESTONE_SCORES[mi] && mi > lastMilestoneIndex) {
+        lastMilestoneIndex = mi;
+        milestoneText = MILESTONE_LABELS[mi] || '';
+        milestoneTextTimer = 60; // 1 second
+      }
+    }
+    if (milestoneTextTimer > 0) {
+      milestoneTextTimer = Math.max(0, milestoneTextTimer - stepMul);
+    }
 
     advanceDifficultyFromScore(currentScore);
     speed += (targetSpeed - speed) * SPEED_CATCHUP_RATE * stepMul;
@@ -1589,19 +1766,45 @@
     if (milestoneFlashTimer > 0)
       milestoneFlashTimer = Math.max(0, milestoneFlashTimer - stepMul);
 
-    // --- Player jump (keyboard + mobile swipe) ---
+    // --- Near-miss decay ---
+    if (nearMissTimer > 0) {
+      nearMissTimer = Math.max(0, nearMissTimer - stepMul);
+    }
+
+    // --- Player jump with coyote time + jump buffering ---
     const jumpKeyDown = !!(keys["Space"] || keys["ArrowUp"]);
     const keyboardJumpPressed = jumpKeyDown && !player.jumpKeyWasDown;
     const mobileJumpPressed = queuedMobileJumps > 0;
 
-    if ((keyboardJumpPressed || mobileJumpPressed) && player.jumpCount < 2) {
+    // Coyote time: allow jumping briefly after leaving ground
+    if (!player.isJumping) {
+      player.coyoteTimer = COYOTE_TIME_FRAMES;
+    } else {
+      player.coyoteTimer = Math.max(0, (player.coyoteTimer || 0) - stepMul);
+    }
+
+    // Jump buffer: remember jump input for a few frames
+    if (keyboardJumpPressed || mobileJumpPressed) {
+      player.jumpBufferTimer = JUMP_BUFFER_FRAMES;
+    } else {
+      player.jumpBufferTimer = Math.max(0, (player.jumpBufferTimer || 0) - stepMul);
+    }
+
+    // Execute jump: with coyote time (first jump) or normal double jump
+    const canFirstJump = player.jumpCount === 0 && (player.coyoteTimer > 0 || !player.isJumping);
+    const canDoubleJump = player.jumpCount === 1 && player.isJumping;
+    const wantsJump = player.jumpBufferTimer > 0 || keyboardJumpPressed || mobileJumpPressed;
+
+    if (wantsJump && (canFirstJump || canDoubleJump)) {
       player.vy = CONFIG.jumpForce;
       player.isJumping = true;
       player.jumpCount++;
       player.jumpHoldFrames = CONFIG.jumpHoldFrames;
+      player.coyoteTimer = 0;
+      player.jumpBufferTimer = 0;
       playJumpSfx();
 
-      if (mobileJumpPressed) queuedMobileJumps--;
+      if (mobileJumpPressed && queuedMobileJumps > 0) queuedMobileJumps--;
     }
 
     if (
@@ -1657,7 +1860,8 @@
         player.isJumping = false;
         player.jumpCount = 0;
         player.jumpHoldFrames = 0;
-        // Landing dust burst
+        // Landing squash + dust burst
+        squashTimer = SQUASH_FRAMES;
         spawnDust(player.x + player.width / 2, CONFIG.groundY, 6, true);
       }
     }
@@ -1671,17 +1875,19 @@
     wasJumping = player.isJumping;
 
     // --- Leg animation ---
-    // Keep sprite frame switching time-based so it does not accelerate with world speed.
     player.legFrame += 0.19 * stepMul;
     chaser.legFrame += 0.19 * stepMul;
 
     // --- Chaser bob ---
     chaser.bobOffset = Math.sin(frameCount * 0.06) * 1;
 
+    // --- Effective speed (slow motion powerup) ---
+    const worldSpeed = speed * effectiveSpeedMul;
+
     // --- Move obstacles ---
     for (let i = obstacles.length - 1; i >= 0; i--) {
       const obstacle = obstacles[i];
-      obstacle.x -= speed * (obstacle.speedMul || 1) * stepMul;
+      obstacle.x -= worldSpeed * (obstacle.speedMul || 1) * stepMul;
 
       if (obstacle.airborne) {
         const bobY =
@@ -1700,38 +1906,86 @@
       }
     }
 
-    // --- Spawn new obstacles ---
-    if (
-      obstacles.length === 0 ||
-      nextObstacleX - (W - (obstacles[obstacles.length - 1]?.x || 0)) < W * 2
-    ) {
-      if (nextObstacleX < W + speed * 120) {
-        spawnObstacle();
+    // --- Move powerup items ---
+    for (let i = powerupItems.length - 1; i >= 0; i--) {
+      const pu = powerupItems[i];
+      pu.x -= worldSpeed * stepMul;
+      pu.bobPhase += POWERUP_BOB_SPEED * stepMul;
+      pu.drawY = pu.baseY + Math.sin(pu.bobPhase) * POWERUP_BOB_AMP;
+
+      // Collect powerup
+      const puHitbox = { x: pu.x, y: pu.drawY, width: POWERUP_SIZE, height: POWERUP_SIZE };
+      const pBox = getPlayerHitbox();
+      if (rectsOverlap(pBox, puHitbox)) {
+        activePowerup = pu.type;
+        const puDef = POWERUP_TYPES.find(d => d.type === pu.type);
+        activePowerupTimer = puDef ? puDef.duration : 180;
+        powerupItems.splice(i, 1);
+        // Visual feedback: brief flash
+        milestoneFlashTimer = 10;
+        continue;
+      }
+
+      if (pu.x + POWERUP_SIZE < -20) {
+        powerupItems.splice(i, 1);
       }
     }
-    let rightmostX = 0;
-    for (const obstacle of obstacles) {
-      const obstacleRight = obstacle.x + obstacle.width;
-      if (obstacleRight > rightmostX) rightmostX = obstacleRight;
-    }
-    const spawnLookahead = W + Math.round(W * 0.78);
-    while (rightmostX < spawnLookahead) {
-      nextObstacleX = Math.max(
-        nextObstacleX,
-        rightmostX + CONFIG.minObstacleGap * (1 / OBSTACLE_DENSITY_MULTIPLIER),
-      );
-      spawnObstacle();
-      rightmostX = 0;
-      for (const o of obstacles) {
-        const obstacleRight = o.x + o.width;
+
+    // --- Spawn new obstacles (respects grace period) ---
+    if (gracePeriodTimer <= 0) {
+      if (
+        obstacles.length === 0 ||
+        nextObstacleX - (W - (obstacles[obstacles.length - 1]?.x || 0)) < W * 2
+      ) {
+        if (nextObstacleX < W + worldSpeed * 120) {
+          spawnObstacle();
+        }
+      }
+      let rightmostX = 0;
+      for (const obstacle of obstacles) {
+        const obstacleRight = obstacle.x + obstacle.width;
         if (obstacleRight > rightmostX) rightmostX = obstacleRight;
+      }
+      const spawnLookahead = W + Math.round(W * 0.78);
+      while (rightmostX < spawnLookahead) {
+        nextObstacleX = Math.max(
+          nextObstacleX,
+          rightmostX + CONFIG.minObstacleGap * (1 / OBSTACLE_DENSITY_MULTIPLIER),
+        );
+        spawnObstacle();
+        rightmostX = 0;
+        for (const o of obstacles) {
+          const obstacleRight = o.x + o.width;
+          if (obstacleRight > rightmostX) rightmostX = obstacleRight;
+        }
+      }
+
+      // --- Spawn powerups ---
+      if (powerupItems.length === 0 && !activePowerup && currentScore > 0) {
+        const rightEdge = rightmostX || nextObstacleX;
+        if (rightEdge - lastPowerupSpawnX > POWERUP_MIN_GAP) {
+          for (const puDef of POWERUP_TYPES) {
+            if (currentScore >= puDef.minScore && Math.random() < puDef.chance * 0.3) {
+              const puX = rightEdge + CONFIG.minObstacleGap * 0.5 + Math.random() * 60;
+              const puY = CONFIG.groundY - POWERUP_SIZE - 10 - Math.random() * 30;
+              powerupItems.push({
+                type: puDef.type,
+                x: puX,
+                baseY: puY,
+                drawY: puY,
+                bobPhase: Math.random() * Math.PI * 2,
+              });
+              lastPowerupSpawnX = puX;
+              break; // Only spawn one at a time
+            }
+          }
+        }
       }
     }
 
     // --- Collision detection ---
     const playerBox = getPlayerHitbox();
     for (const obs of obstacles) {
-      // Slightly smaller obstacle hitbox for fairer collisions near sprite edges.
       const duckCounterAirborne =
         obs.airborne && obs.requiredMove === "duck" && player.isDucking;
       const insetX = Math.max(
@@ -1750,27 +2004,56 @@
       };
 
       if (rectsOverlap(playerBox, obstacleHitbox)) {
+        // Chai Shield: absorb one hit
+        if (activePowerup === 'chai_shield' && activePowerupTimer > 0) {
+          activePowerup = null;
+          activePowerupTimer = 0;
+          // Remove the obstacle that was hit
+          const obsIdx = obstacles.indexOf(obs);
+          if (obsIdx >= 0) recycleObstacleAt(obsIdx);
+          cameraShakeTimer = 4;
+          cameraShakeIntensity = 2;
+          break; // Skip further collision checks this frame
+        }
         triggerGameOver();
         return;
+      }
+
+      // --- Near-miss detection ---
+      if (obs.x + obs.width < player.x + player.width && obs.x + obs.width > player.x - 5) {
+        // Obstacle just passed the player
+        const expandedHitbox = {
+          x: obstacleHitbox.x - NEAR_MISS_THRESHOLD,
+          y: obstacleHitbox.y - NEAR_MISS_THRESHOLD,
+          width: obstacleHitbox.width + NEAR_MISS_THRESHOLD * 2,
+          height: obstacleHitbox.height + NEAR_MISS_THRESHOLD * 2,
+        };
+        if (rectsOverlap(playerBox, expandedHitbox) && !obs._nearMissCounted) {
+          obs._nearMissCounted = true;
+          nearMissTimer = NEAR_MISS_DISPLAY_FRAMES;
+          nearMissX = player.x + player.width;
+          nearMissY = player.y - 8;
+          nearMissCount++;
+        }
       }
     }
 
     // --- Background scroll ---
-    groundOffset = (groundOffset + speed * stepMul) % 30;
-    bgScrollX += speed * 0.35 * stepMul; // parallax: bg scrolls slower than ground
+    groundOffset = (groundOffset + worldSpeed * stepMul) % 30;
+    bgScrollX += worldSpeed * 0.35 * stepMul;
 
     for (const c of clouds) {
-      c.x -= speed * c.speed * stepMul;
+      c.x -= worldSpeed * c.speed * stepMul;
       if (c.x + c.width < -20) c.x = W + 20 + Math.random() * 100;
     }
 
     for (const b of buildings) {
-      b.x -= speed * b.speed * stepMul;
+      b.x -= worldSpeed * b.speed * stepMul;
       if (b.x + b.width < -30) b.x = W + Math.random() * 80;
     }
 
     for (const p of palms) {
-      p.x -= speed * p.speed * stepMul;
+      p.x -= worldSpeed * p.speed * stepMul;
       if (p.x < -30) p.x = W + Math.random() * 60;
     }
 
@@ -1914,7 +2197,43 @@
         dy = baseDy + baseDh - dh;
       }
 
+      // Landing squash/stretch transform
+      if (squashTimer > 0 && !player.isJumping && !player.isDucking) {
+        const t = squashTimer / SQUASH_FRAMES;
+        const sx = 1 + (SQUASH_SCALE_X - 1) * t;
+        const sy = 1 + (SQUASH_SCALE_Y - 1) * t;
+        const centerX = dx + dw / 2;
+        const bottomY = dy + dh;
+        displayCtx.save();
+        displayCtx.translate(centerX, bottomY);
+        displayCtx.scale(sx, sy);
+        displayCtx.translate(-centerX, -bottomY);
+      }
+
+      // Death tumble rotation
+      if (isDeathAnimating) {
+        const centerX = dx + dw / 2;
+        const centerY = dy + dh / 2;
+        displayCtx.save();
+        displayCtx.translate(centerX, centerY);
+        displayCtx.rotate(deathTumbleAngle);
+        displayCtx.translate(-centerX, -centerY);
+      }
+
+      // Chai Shield glow
+      if (activePowerup === 'chai_shield' && activePowerupTimer > 0) {
+        displayCtx.shadowColor = '#f0c040';
+        displayCtx.shadowBlur = 12 + Math.sin(frameCount * 0.15) * 4;
+      }
+
       displayCtx.drawImage(frame, dx, dy, dw, dh);
+
+      // Reset effects
+      displayCtx.shadowColor = 'transparent';
+      displayCtx.shadowBlur = 0;
+
+      if (isDeathAnimating) displayCtx.restore();
+      if (squashTimer > 0 && !player.isJumping && !player.isDucking) displayCtx.restore();
       return;
     }
 
@@ -2273,9 +2592,148 @@
       drawObstacle(obs);
     }
 
+    // Draw powerup items on display canvas
+    for (const pu of powerupItems) {
+      const puDef = POWERUP_TYPES.find(d => d.type === pu.type);
+      if (!puDef) continue;
+      const S = PIXEL_SCALE;
+      const px = pu.x * S;
+      const py = pu.drawY * S;
+      const ps = POWERUP_SIZE * S;
+
+      // Glow
+      displayCtx.shadowColor = puDef.color;
+      displayCtx.shadowBlur = 8 + Math.sin(frameCount * 0.1) * 4;
+
+      // Circle background
+      displayCtx.fillStyle = puDef.color;
+      displayCtx.globalAlpha = 0.85;
+      displayCtx.beginPath();
+      displayCtx.arc(px + ps / 2, py + ps / 2, ps / 2, 0, Math.PI * 2);
+      displayCtx.fill();
+      displayCtx.globalAlpha = 1;
+
+      // Icon text
+      displayCtx.shadowBlur = 0;
+      displayCtx.shadowColor = 'transparent';
+      displayCtx.font = `${Math.round(ps * 0.6)}px sans-serif`;
+      displayCtx.textAlign = 'center';
+      displayCtx.textBaseline = 'middle';
+      displayCtx.fillStyle = '#fff';
+      displayCtx.fillText(puDef.icon, px + ps / 2, py + ps / 2 + 1);
+    }
+    displayCtx.shadowBlur = 0;
+    displayCtx.shadowColor = 'transparent';
+
     // Draw character sprites at full resolution AFTER blit (crisp, no pixelation)
     if (chaseSpritesReady >= 2) drawChaser();
     if (chaserSpritesReady >= 2) drawPlayer();
+
+    // --- Ducking indicator ---
+    if (player.isDucking && gameState === 'playing') {
+      displayCtx.fillStyle = 'rgba(0, 106, 78, 0.04)';
+      displayCtx.fillRect(0, 0, displayW, displayH);
+    }
+
+    // --- Active powerup HUD indicator ---
+    if (activePowerup && activePowerupTimer > 0) {
+      const puDef = POWERUP_TYPES.find(d => d.type === activePowerup);
+      if (puDef) {
+        const hx = 10 * PIXEL_SCALE;
+        const hy = 10 * PIXEL_SCALE;
+        const barW = 60 * PIXEL_SCALE;
+        const barH = 6 * PIXEL_SCALE;
+        const pct = activePowerupTimer / puDef.duration;
+
+        // Background bar
+        displayCtx.fillStyle = 'rgba(0,0,0,0.4)';
+        displayCtx.fillRect(hx, hy, barW, barH);
+        // Fill bar
+        displayCtx.fillStyle = puDef.color;
+        displayCtx.fillRect(hx, hy, barW * pct, barH);
+        // Border
+        displayCtx.strokeStyle = 'rgba(255,255,255,0.5)';
+        displayCtx.lineWidth = 1;
+        displayCtx.strokeRect(hx, hy, barW, barH);
+        // Icon + label
+        displayCtx.font = `bold ${11 * PIXEL_SCALE}px sans-serif`;
+        displayCtx.fillStyle = puDef.color;
+        displayCtx.textAlign = 'left';
+        displayCtx.textBaseline = 'top';
+        displayCtx.fillText(`${puDef.icon} ${puDef.label}`, hx, hy + barH + 2);
+      }
+    }
+
+    // --- Score multiplier indicator ---
+    if (activePowerup === 'score_multi' && activePowerupTimer > 0) {
+      const pulse = 1 + Math.sin(frameCount * 0.2) * 0.15;
+      displayCtx.font = `bold ${Math.round(14 * PIXEL_SCALE * pulse)}px sans-serif`;
+      displayCtx.fillStyle = '#ffd700';
+      displayCtx.textAlign = 'right';
+      displayCtx.textBaseline = 'top';
+      displayCtx.fillText('×2', displayW - 10 * PIXEL_SCALE, 28 * PIXEL_SCALE);
+    }
+
+    // --- Slow motion vignette ---
+    if (activePowerup === 'slow_motion' && activePowerupTimer > 0) {
+      const vigAlpha = 0.08 + Math.sin(frameCount * 0.08) * 0.03;
+      const vig = displayCtx.createRadialGradient(
+        displayW / 2, displayH / 2, displayW * 0.3,
+        displayW / 2, displayH / 2, displayW * 0.7
+      );
+      vig.addColorStop(0, 'rgba(102, 217, 239, 0)');
+      vig.addColorStop(1, `rgba(102, 217, 239, ${vigAlpha})`);
+      displayCtx.fillStyle = vig;
+      displayCtx.fillRect(0, 0, displayW, displayH);
+    }
+
+    // --- Near-miss text ---
+    if (nearMissTimer > 0) {
+      const nmAlpha = clamp(nearMissTimer / NEAR_MISS_DISPLAY_FRAMES, 0, 1);
+      const nmY = nearMissY * PIXEL_SCALE - (NEAR_MISS_DISPLAY_FRAMES - nearMissTimer) * 0.5;
+      displayCtx.font = `bold ${10 * PIXEL_SCALE}px sans-serif`;
+      displayCtx.fillStyle = `rgba(240, 192, 64, ${nmAlpha})`;
+      displayCtx.textAlign = 'left';
+      displayCtx.textBaseline = 'bottom';
+      displayCtx.fillText('কাছে! 😮', nearMissX * PIXEL_SCALE + 4, nmY);
+    }
+
+    // --- Milestone celebration text ---
+    if (milestoneTextTimer > 0 && milestoneText) {
+      const mtAlpha = clamp(milestoneTextTimer / 30, 0, 1);
+      const mtScale = 1 + (1 - milestoneTextTimer / 60) * 0.3;
+      displayCtx.font = `bold ${Math.round(18 * PIXEL_SCALE * mtScale)}px sans-serif`;
+      displayCtx.fillStyle = `rgba(240, 192, 64, ${mtAlpha})`;
+      displayCtx.textAlign = 'center';
+      displayCtx.textBaseline = 'middle';
+      displayCtx.fillText(milestoneText, displayW / 2, displayH * 0.3);
+    }
+
+    // --- New high score banner ---
+    if (newHighScoreBannerTimer > 0) {
+      const hsAlpha = clamp(newHighScoreBannerTimer / 40, 0, 1);
+      const pulse = 1 + Math.sin(frameCount * 0.2) * 0.08;
+      displayCtx.font = `bold ${Math.round(14 * PIXEL_SCALE * pulse)}px sans-serif`;
+      displayCtx.fillStyle = `rgba(240, 192, 64, ${hsAlpha})`;
+      displayCtx.textAlign = 'center';
+      displayCtx.textBaseline = 'middle';
+      displayCtx.fillText('🏆 নতুন রেকর্ড!', displayW / 2, displayH * 0.2);
+    }
+
+    // --- Tutorial overlay ---
+    if (tutorialActive && tutorialTimer > 0) {
+      const tAlpha = clamp(tutorialTimer / 60, 0, 0.7);
+      displayCtx.fillStyle = `rgba(0, 0, 0, ${tAlpha * 0.5})`;
+      displayCtx.fillRect(0, 0, displayW, displayH);
+      displayCtx.font = `bold ${16 * PIXEL_SCALE}px sans-serif`;
+      displayCtx.fillStyle = `rgba(255, 255, 255, ${tAlpha})`;
+      displayCtx.textAlign = 'center';
+      displayCtx.textBaseline = 'middle';
+      displayCtx.fillText('⬆️ লাফ দিন  |  ⬇️ নিচু হন', displayW / 2, displayH / 2);
+      displayCtx.font = `${10 * PIXEL_SCALE}px sans-serif`;
+      displayCtx.fillStyle = `rgba(200, 200, 200, ${tAlpha * 0.8})`;
+      displayCtx.fillText('যেকোনো বোতাম চাপুন', displayW / 2, displayH / 2 + 24 * PIXEL_SCALE);
+    }
 
     // Milestone flash overlay
     if (milestoneFlashTimer > 0) {

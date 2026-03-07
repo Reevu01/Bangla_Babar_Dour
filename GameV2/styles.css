@@ -306,3 +306,48 @@
       top: 50%; left: 45%;
       transform: translate(-50%, -50%);
     }
+
+    /* ===== PAUSE BUTTON (HUD) ===== */
+    .btn-pause {
+      position: absolute;
+      top: 0;
+      left: -60px;
+      background: rgba(10, 46, 20, 0.6);
+      border: 1px solid rgba(143, 188, 143, 0.3);
+      color: #f0c040;
+      font-size: clamp(16px, 2.2vw, 22px);
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      line-height: 1;
+      transition: background 0.15s, transform 0.1s;
+      z-index: 10;
+    }
+    .btn-pause:hover {
+      background: rgba(10, 46, 20, 0.85);
+      transform: scale(1.1);
+    }
+
+    /* ===== PAUSE SCREEN ===== */
+    #pause-screen {
+      background: rgba(10, 46, 20, 0.92);
+      z-index: 15;
+    }
+    #pause-screen h2 {
+      font-size: clamp(28px, 5vw, 48px);
+      color: #f0c040;
+      margin-bottom: 12px;
+    }
+    .pause-hint {
+      color: #8fbc8f;
+      font-size: clamp(12px, 1.8vw, 15px);
+      margin-bottom: 20px;
+    }
+
+    /* ===== NEAR-MISS DISPLAY (Game Over) ===== */
+    .nearmiss-display {
+      color: #f0c040;
+      font-size: clamp(12px, 1.6vw, 15px);
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }

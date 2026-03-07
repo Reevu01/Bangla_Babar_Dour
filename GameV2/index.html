@@ -15,6 +15,7 @@
   <div id="hud" class="hidden">
     <div id="hud-score">0</div>
     <div class="hud-highscore">HI <span id="hud-highscore">0</span></div>
+    <button id="btn-pause" class="btn-pause" aria-label="Pause">⏸</button>
   </div>
 
   <!-- HOME SCREEN -->
@@ -36,16 +37,25 @@
       <ol class="leaderboard-list" id="home-leaderboard-list"></ol>
     </div>
     <div class="controls-hint">
-      <kbd>SPACE</kbd> / <kbd>↑</kbd> Jump &nbsp;&nbsp;
-      <kbd>SHIFT</kbd> / <kbd>↓</kbd> Duck &nbsp;&nbsp;
+      <kbd>SPACE</kbd> / <kbd>↑</kbd> লাফ &nbsp;&nbsp;
+      <kbd>SHIFT</kbd> / <kbd>↓</kbd> নিচু &nbsp;&nbsp;
+      <kbd>ESC</kbd> বিরতি &nbsp;&nbsp;
       Mobile: swipe <strong>up</strong> to jump, swipe <strong>down</strong> to duck
     </div>
+  </div>
+
+  <!-- PAUSE SCREEN -->
+  <div id="pause-screen" class="screen-overlay hidden">
+    <h2>⏸ বিরতি</h2>
+    <p class="pause-hint">ESC বা P চাপুন অথবা</p>
+    <button class="btn btn-primary" id="btn-resume">চালিয়ে যান</button>
   </div>
 
   <!-- GAME OVER SCREEN -->
   <div id="gameover-screen" class="screen-overlay hidden">
     <h2>গেম ওভার!</h2>
     <div class="final-score">Score: <span id="final-score">0</span></div>
+    <div class="nearmiss-display">😮 কাছে: <span id="gameover-nearmiss">0</span></div>
     <div class="high-score-display">
       🏆 High Score: <span id="gameover-highscore">0</span>
     </div>
@@ -62,10 +72,10 @@
 
   <!-- ORIENTATION OVERLAY (mobile portrait lock) -->
   <div id="orientation-overlay" class="screen-overlay hidden">
-    <h3>Rotate Your Phone</h3>
+    <h3>📱 ফোন ঘুরান</h3>
     <p>
-      Dhaka Dash is designed for landscape mode on mobile.<br>
-      Turn your phone sideways to continue.
+      বাংলা বাবার দৌড় ল্যান্ডস্কেপ মোডে খেলুন।<br>
+      আপনার ফোন পাশে ঘুরান।
     </p>
   </div>
 </div>
